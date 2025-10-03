@@ -5,6 +5,6 @@ This repository will contain all the home labs related to cybersecurity that I w
 ------------------------------------------------------
  ## Table of Contents
 
- ### Linux Command Line Basics
-network_security/linuxBasics/linuxBasics.md
+ ### Ubuntu Labs
+- [Command Line Basics](network_security/linuxBasics/linuxBasics.md)
  
