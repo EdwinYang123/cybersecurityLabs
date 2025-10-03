@@ -6,5 +6,5 @@ This repository will contain all the home labs related to cybersecurity that I w
  ## Table of Contents
 
  ### Linux Command Line Basics
-cybersecurityLabs\network_security\linuxBasics\linuxBasics.md
+network_security/linuxBasics/linuxBasics.md
  
