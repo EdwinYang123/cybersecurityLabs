@@ -7,5 +7,5 @@ This repository will contain all the home labs related to cybersecurity that I w
 
  ### Ubuntu Labs
 - [Command Line Basics](network_security/linuxBasics/linuxBasics.md)
-- [Cross Site Reforgery Lab](network_security/Cross Site Request Forgery Lab/CSRFLab.md)
+- [Cross Site Reforgery Lab](network_security/CrossSiteRequestForgeryLab/CSRFLab.md)
  
